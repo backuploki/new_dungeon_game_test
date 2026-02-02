@@ -3,37 +3,48 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Dungeon Mobile</title>
+    <title>Hallway Test</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; touch-action: none; }
         
-        /* The UI Overlay */
         #ui-layer {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            pointer-events: none; /* Let touches pass through to the logic */
+            pointer-events: none; 
             display: flex; flex-direction: column; justify-content: center; align-items: center;
         }
         
         #instructions {
-            color: rgba(255,255,255,0.8); 
-            background: rgba(0,0,0,0.5); 
+            color: rgba(255,255,255,0.9); 
+            background: rgba(0,0,0,0.6); 
             padding: 20px; border-radius: 10px;
             text-align: center;
-            pointer-events: auto; /* Clickable */
+            pointer-events: auto;
+            border: 1px solid #444;
         }
 
-        /* Visual guides for thumbs */
+        /* Thumb Zones visual guides */
         .thumb-zone {
-            position: absolute; bottom: 50px; width: 100px; height: 100px;
-            border: 2px dashed rgba(255,255,255,0.2);
+            position: absolute; bottom: 40px; width: 120px; height: 120px;
+            border: 2px solid rgba(255,255,255,0.1);
+            background: rgba(255,255,255,0.05);
             border-radius: 50%;
             pointer-events: none;
         }
-        #left-zone { left: 40px; }
-        #right-zone { right: 40px; }
+        
+        /* The "Stick" indicator that moves with your thumb */
+        .stick-nub {
+            position: absolute; top: 50%; left: 50%; width: 40px; height: 40px;
+            background: rgba(255, 200, 0, 0.3);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        #left-zone { left: 30px; }
+        #right-zone { right: 30px; }
         
         .zone-label {
-            position: absolute; bottom: -30px; width: 100%; text-align: center; color: white; opacity: 0.5;
+            position: absolute; bottom: -25px; width: 100%; text-align: center; 
+            color: #aaa; font-size: 12px; font-weight: bold; letter-spacing: 1px;
         }
     </style>
 </head>
@@ -41,12 +52,18 @@
 
 <div id="ui-layer">
     <div id="instructions">
-        <h1>TAP TO START</h1>
-        <p>Left Thumb: Walk | Right Thumb: Look</p>
+        <h2>HALLWAY TEST</h2>
+        <p>Tap to Start</p>
     </div>
     
-    <div id="left-zone" class="thumb-zone"><div class="zone-label">WALK</div></div>
-    <div id="right-zone" class="thumb-zone"><div class="zone-label">LOOK</div></div>
+    <div id="left-zone" class="thumb-zone">
+        <div class="stick-nub" id="left-nub"></div>
+        <div class="zone-label">MOVE</div>
+    </div>
+    <div id="right-zone" class="thumb-zone">
+        <div class="stick-nub" id="right-nub"></div>
+        <div class="zone-label">LOOK</div>
+    </div>
 </div>
 
 <script type="importmap">
@@ -62,7 +79,7 @@
 
     // --- 1. SETUP ---
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x000000, 0.15); 
+    scene.fog = new THREE.FogExp2(0x000000, 0.1); // Slightly less fog so you can see further
 
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -70,14 +87,22 @@
     renderer.shadowMap.enabled = true; 
     document.body.appendChild(renderer.domElement);
 
-    // --- 2. MOBILE INPUTS ---
-    let moveSpeed = 0;
-    let lookSpeedX = 0;
-    let lookSpeedY = 0;
-    const maxSpeed = 10.0;
-    
-    // Track active touches
+    // --- 2. INPUT VARIABLES ---
+    const input = {
+        moveX: 0, // Strafe Left/Right
+        moveY: 0, // Walk Forward/Back
+        lookX: 0, // Rotate Left/Right
+        lookY: 0  // Look Up/Down
+    };
+
+    // UI Elements for feedback
+    const leftNub = document.getElementById('left-nub');
+    const rightNub = document.getElementById('right-nub');
+    const instructions = document.getElementById('instructions');
+
+    // Touch Handling
     const touches = {}; 
+    const maxRange = 50; // How far the joystick can move visually
 
     document.addEventListener('touchstart', handleTouch);
     document.addEventListener('touchmove', handleTouch);
@@ -86,157 +111,224 @@
     const halfWidth = window.innerWidth / 2;
 
     function handleTouch(e) {
-        e.preventDefault(); // Stop scrolling
-        document.getElementById('instructions').style.display = 'none'; // Hide menu on tap
+        e.preventDefault(); 
+        instructions.style.display = 'none'; 
 
         for (let i = 0; i < e.touches.length; i++) {
             const t = e.touches[i];
-            const startX = touches[t.identifier] ? touches[t.identifier].startX : t.clientX;
-            const startY = touches[t.identifier] ? touches[t.identifier].startY : t.clientY;
-
-            // Store start pos if new
+            
+            // Register new touch start position
             if (!touches[t.identifier]) {
                 touches[t.identifier] = { startX: t.clientX, startY: t.clientY };
             }
 
-            // LEFT SIDE (Movement)
-            if (touches[t.identifier].startX < halfWidth) {
-                const deltaY = t.clientY - touches[t.identifier].startY;
-                // Drag up (negative delta) = Move Forward
-                moveSpeed = -deltaY * 0.1; 
-                // Clamp speed
-                if (moveSpeed > maxSpeed) moveSpeed = maxSpeed;
-                if (moveSpeed < -maxSpeed) moveSpeed = -maxSpeed;
+            const startX = touches[t.identifier].startX;
+            const startY = touches[t.identifier].startY;
+            const deltaX = t.clientX - startX;
+            const deltaY = t.clientY - startY;
+
+            // LEFT SIDE (Movement - WASD Style)
+            if (startX < halfWidth) {
+                // Normalize values between -1 and 1
+                input.moveX = Math.max(-1, Math.min(1, deltaX / 50)); 
+                input.moveY = Math.max(-1, Math.min(1, deltaY / 50));
+
+                // Move the visual nub
+                const visX = Math.max(-maxRange, Math.min(maxRange, deltaX));
+                const visY = Math.max(-maxRange, Math.min(maxRange, deltaY));
+                leftNub.style.transform = `translate(calc(-50% + ${visX}px), calc(-50% + ${visY}px))`;
             }
             
-            // RIGHT SIDE (Looking)
+            // RIGHT SIDE (Look)
             else {
-                const previousX = touches[t.identifier].lastX || startX;
-                const previousY = touches[t.identifier].lastY || startY;
-                
-                lookSpeedX = (t.clientX - previousX) * 0.005;
-                lookSpeedY = (t.clientY - previousY) * 0.005;
+                // Sensitivity
+                input.lookX = deltaX * 0.002; 
+                input.lookY = deltaY * 0.002;
 
-                touches[t.identifier].lastX = t.clientX;
-                touches[t.identifier].lastY = t.clientY;
+                // Move the visual nub slightly for feedback
+                const visX = Math.max(-20, Math.min(20, deltaX));
+                const visY = Math.max(-20, Math.min(20, deltaY));
+                rightNub.style.transform = `translate(calc(-50% + ${visX}px), calc(-50% + ${visY}px))`;
             }
         }
     }
 
     function endTouch(e) {
-        // Reset speeds when fingers lift
-        // We have to figure out WHICH finger lifted. 
-        // Simplification: If no touches left, stop everything.
-        if (e.touches.length === 0) {
-            moveSpeed = 0;
-            lookSpeedX = 0;
-            lookSpeedY = 0;
-            for (let id in touches) delete touches[id];
-        }
-    }
+        // If a finger lifts, we need to check which side it was and reset that input
+        // Simple approach: Re-scan all remaining touches. 
+        // If no touches on left side, reset move. If no touches on right, reset look.
+        
+        let leftActive = false;
+        let rightActive = false;
 
-    // --- 3. GENERATION (Same as before) ---
-    const TILE_SIZE = 4;
-    const WORLD_SIZE = 40; 
-    const map = []; 
-    for(let x=0; x<WORLD_SIZE; x++) { map[x] = []; for(let z=0; z<WORLD_SIZE; z++) map[x][z] = 1; }
-
-    let cx = Math.floor(WORLD_SIZE/2), cz = Math.floor(WORLD_SIZE/2);
-    map[cx][cz] = 0; 
-    for (let i = 0; i < 400; i++) { 
-        const dir = Math.floor(Math.random() * 4);
-        if (dir === 0 && cx < WORLD_SIZE - 2) cx++; else if (dir === 1 && cx > 1) cx--;
-        else if (dir === 2 && cz < WORLD_SIZE - 2) cz++; else if (dir === 3 && cz > 1) cz--;
-        map[cx][cz] = 0; 
-    }
-
-    const textureLoader = new THREE.TextureLoader();
-    function createColorTexture(color) {
-        const canvas = document.createElement('canvas'); canvas.width=64; canvas.height=64;
-        const ctx = canvas.getContext('2d'); ctx.fillStyle = color; ctx.fillRect(0,0,64,64);
-        for(let i=0; i<100; i++) { ctx.fillStyle=`rgba(0,0,0,${Math.random()*0.2})`; ctx.fillRect(Math.random()*64,Math.random()*64,4,4); }
-        return new THREE.CanvasTexture(canvas);
-    }
-    const wallMat = new THREE.MeshStandardMaterial({ map: createColorTexture('#555555'), roughness: 0.8 });
-    const floorMat = new THREE.MeshStandardMaterial({ map: createColorTexture('#222222'), roughness: 0.8 });
-    const paintColors = ['#880000', '#008800', '#000088', '#888800'];
-    const wallGeo = new THREE.BoxGeometry(TILE_SIZE, TILE_SIZE, TILE_SIZE);
-    const floorGeo = new THREE.PlaneGeometry(TILE_SIZE, TILE_SIZE);
-    const torchLights = [];
-
-    for(let x=0; x<WORLD_SIZE; x++) {
-        for(let z=0; z<WORLD_SIZE; z++) {
-            const posX = (x - WORLD_SIZE/2) * TILE_SIZE;
-            const posZ = (z - WORLD_SIZE/2) * TILE_SIZE;
-            if (map[x][z] === 1) {
-                const wall = new THREE.Mesh(wallGeo, wallMat);
-                wall.position.set(posX, TILE_SIZE/2, posZ);
-                wall.castShadow = true; wall.receiveShadow = true; scene.add(wall);
-                if (Math.random() > 0.9) addTorch(posX, posZ); 
-                else if (Math.random() > 0.95) addPainting(posX, posZ);
-            } else {
-                const floor = new THREE.Mesh(floorGeo, floorMat);
-                floor.rotation.x = -Math.PI / 2; floor.position.set(posX, 0, posZ);
-                floor.receiveShadow = true; scene.add(floor);
-                const ceil = new THREE.Mesh(floorGeo, wallMat);
-                ceil.rotation.x = Math.PI / 2; ceil.position.set(posX, TILE_SIZE, posZ); scene.add(ceil);
+        for (let i = 0; i < e.touches.length; i++) {
+            const t = e.touches[i];
+            if (touches[t.identifier]) { // Use stored startX to determine side
+                if (touches[t.identifier].startX < halfWidth) leftActive = true;
+                else rightActive = true;
             }
         }
+
+        if (!leftActive) {
+            input.moveX = 0;
+            input.moveY = 0;
+            leftNub.style.transform = `translate(-50%, -50%)`; // Reset nub
+        }
+        if (!rightActive) {
+            input.lookX = 0;
+            input.lookY = 0;
+            rightNub.style.transform = `translate(-50%, -50%)`; // Reset nub
+        }
+        
+        // Clean up stored touches that ended
+        const activeIds = Array.from(e.touches).map(t => t.identifier);
+        for (let id in touches) {
+            if (!activeIds.includes(parseInt(id))) delete touches[id];
+        }
     }
 
-    function addTorch(x, z) {
-        const light = new THREE.PointLight(0xffaa00, 15, 12);
-        light.position.set(x, TILE_SIZE * 0.6, z); light.castShadow = true; scene.add(light);
-        const bulb = new THREE.Mesh(new THREE.BoxGeometry(0.2,0.5,0.2), new THREE.MeshBasicMaterial({color:0xffaa00}));
-        bulb.position.copy(light.position); scene.add(bulb);
-        light.userData = { offset: Math.random() * 100 }; torchLights.push(light);
-    }
-    function addPainting(x, z) {
+    // --- 3. SIMPLE HALLWAY GENERATION ---
+    const TILE_SIZE = 5; // Bigger tiles
+    const HALL_LENGTH = 30; // 30 tiles long
+    
+    // Textures
+    const textureLoader = new THREE.TextureLoader();
+    function createTexture(color, noise) {
         const canvas = document.createElement('canvas'); canvas.width=128; canvas.height=128;
-        const ctx = canvas.getContext('2d'); ctx.fillStyle='#443322'; ctx.fillRect(0,0,128,128);
-        ctx.fillStyle = paintColors[Math.floor(Math.random() * paintColors.length)]; ctx.fillRect(10,10,108,108); 
-        const paintMat = new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(canvas) });
-        const paintMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.5), paintMat);
-        paintMesh.position.set(x, TILE_SIZE * 0.5, z); paintMesh.rotation.y = Math.random() * Math.PI; scene.add(paintMesh);
+        const ctx = canvas.getContext('2d'); 
+        ctx.fillStyle = color; ctx.fillRect(0,0,128,128);
+        if(noise) {
+            for(let i=0; i<400; i++) { 
+                ctx.fillStyle=`rgba(0,0,0,${Math.random()*0.1})`; 
+                ctx.fillRect(Math.random()*128,Math.random()*128,2,2); 
+            }
+        }
+        // Draw a border for tiles
+        ctx.strokeStyle = "rgba(0,0,0,0.3)"; ctx.lineWidth = 4; ctx.strokeRect(0,0,128,128);
+        return new THREE.CanvasTexture(canvas);
     }
 
-    camera.position.set(0, TILE_SIZE/2, 0);
+    const wallMat = new THREE.MeshStandardMaterial({ map: createTexture('#666666', true), roughness: 0.5 });
+    const floorMat = new THREE.MeshStandardMaterial({ map: createTexture('#333333', true), roughness: 0.8 });
+    const ceilingMat = new THREE.MeshStandardMaterial({ map: createTexture('#222222', true), roughness: 0.9 });
+
+    const boxGeo = new THREE.BoxGeometry(TILE_SIZE, TILE_SIZE, TILE_SIZE);
+    const planeGeo = new THREE.PlaneGeometry(TILE_SIZE, TILE_SIZE);
+
+    const torchLights = [];
+
+    // Build the Hallway
+    for (let z = 0; z < HALL_LENGTH; z++) {
+        const zPos = -z * TILE_SIZE;
+
+        // Floor
+        const floor = new THREE.Mesh(planeGeo, floorMat);
+        floor.rotation.x = -Math.PI/2;
+        floor.position.set(0, 0, zPos);
+        floor.receiveShadow = true;
+        scene.add(floor);
+
+        // Ceiling
+        const ceil = new THREE.Mesh(planeGeo, ceilingMat);
+        ceil.rotation.x = Math.PI/2;
+        ceil.position.set(0, TILE_SIZE, zPos);
+        scene.add(ceil);
+
+        // Left Wall
+        const wallL = new THREE.Mesh(boxGeo, wallMat);
+        wallL.position.set(-TILE_SIZE, TILE_SIZE/2, zPos);
+        wallL.castShadow = true; wallL.receiveShadow = true;
+        scene.add(wallL);
+
+        // Right Wall
+        const wallR = new THREE.Mesh(boxGeo, wallMat);
+        wallR.position.set(TILE_SIZE, TILE_SIZE/2, zPos);
+        wallR.castShadow = true; wallR.receiveShadow = true;
+        scene.add(wallR);
+
+        // Add Torches every 3 tiles
+        if (z % 3 === 0) {
+            addTorch(0, TILE_SIZE - 1, zPos);
+        }
+    }
+
+    // Add a big red box at the end so you have a destination
+    const goal = new THREE.Mesh(new THREE.BoxGeometry(2,2,2), new THREE.MeshStandardMaterial({color:'red'}));
+    goal.position.set(0, 1.5, -(HALL_LENGTH-1)*TILE_SIZE);
+    scene.add(goal);
+
+    function addTorch(x, y, z) {
+        // Ceiling light style
+        const light = new THREE.PointLight(0xffaa00, 10, 15);
+        light.position.set(x, y - 0.5, z);
+        light.castShadow = true;
+        scene.add(light);
+        
+        const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.2), new THREE.MeshBasicMaterial({color:0xffaa00}));
+        bulb.position.copy(light.position);
+        scene.add(bulb);
+
+        light.userData = { offset: Math.random() * 100 };
+        torchLights.push(light);
+    }
+
+    // Set Start Position
+    camera.position.set(0, 2, 0); // 2 units high (eye level)
 
     // --- 4. GAME LOOP ---
     const clock = new THREE.Clock();
+    const moveSpeed = 8.0;
 
     function animate() {
         requestAnimationFrame(animate);
         const delta = clock.getDelta();
         const time = clock.getElapsedTime();
 
-        // Flicker
+        // Flicker Lights
         torchLights.forEach(light => {
-            light.intensity = 12 + (Math.sin(time * 10 + light.userData.offset) * 2 + Math.random() * 3); 
+            light.intensity = 8 + Math.sin(time * 5 + light.userData.offset) + Math.random(); 
         });
 
-        // Rotation (Look)
-        camera.rotation.y -= lookSpeedX;
-        camera.rotation.x -= lookSpeedY; // Note: In a real game, you'd clamp this so you don't flip over
-        lookSpeedX *= 0.8; // Dampening (slow down when you stop dragging)
-        lookSpeedY *= 0.8;
+        // 1. ROTATION (Look)
+        // We accumulate rotation from input.lookX/Y
+        camera.rotation.y -= input.lookX;
+        
+        // Clamp Up/Down look so you don't break your neck
+        // We use a helper variable for pitch? No, simple way:
+        // (For a robust game we'd use Euler or Quaternions, but this works for a test)
+        // Note: input.lookY is speed, not position. 
+        // Since we are using "Joystick" style for look, we just subtract speed.
+        
+        // Reset look speed (drag to look logic)
+        // If we want "Joystick Look" (hold to spin), we keep value. 
+        // If we want "Swipe to Look" (standard FPS), we dampen it.
+        // Let's stick to "Swipe/Drag" feeling for look:
+        input.lookX *= 0.0; // Reset immediately (1:1 movement)
+        input.lookY *= 0.0; 
 
-        // Movement (Walk)
-        if (Math.abs(moveSpeed) > 0.1) {
-            const direction = new THREE.Vector3();
-            camera.getWorldDirection(direction);
-            direction.y = 0; direction.normalize();
+        // 2. MOVEMENT (Strafe + Walk)
+        if (Math.abs(input.moveY) > 0.05 || Math.abs(input.moveX) > 0.05) {
+            const forward = new THREE.Vector3();
+            const right = new THREE.Vector3();
 
-            const nextX = camera.position.x + (direction.x * moveSpeed * delta);
-            const nextZ = camera.position.z + (direction.z * moveSpeed * delta);
+            // Get camera direction
+            camera.getWorldDirection(forward);
+            forward.y = 0; // Flatten (don't fly up/down)
+            forward.normalize();
+
+            right.crossVectors(forward, camera.up).normalize();
+
+            // Calculate Move Vector
+            // -input.moveY because negative is Forward in 3D space usually, but Joystick Up is negative pixels?
+            // Actually: Touch Drag Up = Negative deltaY. 
+            // So negative deltaY should mean positive Forward.
             
-            const gridX = Math.round((nextX / TILE_SIZE) + WORLD_SIZE/2);
-            const gridZ = Math.round((nextZ / TILE_SIZE) + WORLD_SIZE/2);
+            const moveVec = new THREE.Vector3();
+            moveVec.addScaledVector(forward, -input.moveY * moveSpeed * delta);
+            moveVec.addScaledVector(right, input.moveX * moveSpeed * delta);
 
-            if (map[gridX] && map[gridX][gridZ] === 0) {
-                camera.position.x = nextX;
-                camera.position.z = nextZ;
-            }
+            // Apply
+            camera.position.add(moveVec);
         }
         
         renderer.render(scene, camera);
