@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Dungeon Mobile</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; touch-action: none; }
+        
+        /* The UI Overlay */
+        #ui-layer {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; /* Let touches pass through to the logic */
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+        }
+        
+        #instructions {
+            color: rgba(255,255,255,0.8); 
+            background: rgba(0,0,0,0.5); 
+            padding: 20px; border-radius: 10px;
+            text-align: center;
+            pointer-events: auto; /* Clickable */
+        }
+
+        /* Visual guides for thumbs */
+        .thumb-zone {
+            position: absolute; bottom: 50px; width: 100px; height: 100px;
+            border: 2px dashed rgba(255,255,255,0.2);
+            border-radius: 50%;
+            pointer-events: none;
+        }
+        #left-zone { left: 40px; }
+        #right-zone { right: 40px; }
+        
+        .zone-label {
+            position: absolute; bottom: -30px; width: 100%; text-align: center; color: white; opacity: 0.5;
+        }
+    </style>
+</head>
+<body>
+
+<div id="ui-layer">
+    <div id="instructions">
+        <h1>TAP TO START</h1>
+        <p>Left Thumb: Walk | Right Thumb: Look</p>
+    </div>
+    
+    <div id="left-zone" class="thumb-zone"><div class="zone-label">WALK</div></div>
+    <div id="right-zone" class="thumb-zone"><div class="zone-label">LOOK</div></div>
+</div>
+
+<script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+    }
+  }
+</script>
+
+<script type="module">
+    import * as THREE from 'three';
+
+    // --- 1. SETUP ---
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x000000, 0.15); 
+
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true; 
+    document.body.appendChild(renderer.domElement);
+
+    // --- 2. MOBILE INPUTS ---
+    let moveSpeed = 0;
+    let lookSpeedX = 0;
+    let lookSpeedY = 0;
+    const maxSpeed = 10.0;
+    
+    // Track active touches
+    const touches = {}; 
+
+    document.addEventListener('touchstart', handleTouch);
+    document.addEventListener('touchmove', handleTouch);
+    document.addEventListener('touchend', endTouch);
+    
+    const halfWidth = window.innerWidth / 2;
+
+    function handleTouch(e) {
+        e.preventDefault(); // Stop scrolling
+        document.getElementById('instructions').style.display = 'none'; // Hide menu on tap
+
+        for (let i = 0; i < e.touches.length; i++) {
+            const t = e.touches[i];
+            const startX = touches[t.identifier] ? touches[t.identifier].startX : t.clientX;
+            const startY = touches[t.identifier] ? touches[t.identifier].startY : t.clientY;
+
+            // Store start pos if new
+            if (!touches[t.identifier]) {
+                touches[t.identifier] = { startX: t.clientX, startY: t.clientY };
+            }
+
+            // LEFT SIDE (Movement)
+            if (touches[t.identifier].startX < halfWidth) {
+                const deltaY = t.clientY - touches[t.identifier].startY;
+                // Drag up (negative delta) = Move Forward
+                moveSpeed = -deltaY * 0.1; 
+                // Clamp speed
+                if (moveSpeed > maxSpeed) moveSpeed = maxSpeed;
+                if (moveSpeed < -maxSpeed) moveSpeed = -maxSpeed;
+            }
+            
+            // RIGHT SIDE (Looking)
+            else {
+                const previousX = touches[t.identifier].lastX || startX;
+                const previousY = touches[t.identifier].lastY || startY;
+                
+                lookSpeedX = (t.clientX - previousX) * 0.005;
+                lookSpeedY = (t.clientY - previousY) * 0.005;
+
+                touches[t.identifier].lastX = t.clientX;
+                touches[t.identifier].lastY = t.clientY;
+            }
+        }
+    }
+
+    function endTouch(e) {
+        // Reset speeds when fingers lift
+        // We have to figure out WHICH finger lifted. 
+        // Simplification: If no touches left, stop everything.
+        if (e.touches.length === 0) {
+            moveSpeed = 0;
+            lookSpeedX = 0;
+            lookSpeedY = 0;
+            for (let id in touches) delete touches[id];
+        }
+    }
+
+    // --- 3. GENERATION (Same as before) ---
+    const TILE_SIZE = 4;
+    const WORLD_SIZE = 40; 
+    const map = []; 
+    for(let x=0; x<WORLD_SIZE; x++) { map[x] = []; for(let z=0; z<WORLD_SIZE; z++) map[x][z] = 1; }
+
+    let cx = Math.floor(WORLD_SIZE/2), cz = Math.floor(WORLD_SIZE/2);
+    map[cx][cz] = 0; 
+    for (let i = 0; i < 400; i++) { 
+        const dir = Math.floor(Math.random() * 4);
+        if (dir === 0 && cx < WORLD_SIZE - 2) cx++; else if (dir === 1 && cx > 1) cx--;
+        else if (dir === 2 && cz < WORLD_SIZE - 2) cz++; else if (dir === 3 && cz > 1) cz--;
+        map[cx][cz] = 0; 
+    }
+
+    const textureLoader = new THREE.TextureLoader();
+    function createColorTexture(color) {
+        const canvas = document.createElement('canvas'); canvas.width=64; canvas.height=64;
+        const ctx = canvas.getContext('2d'); ctx.fillStyle = color; ctx.fillRect(0,0,64,64);
+        for(let i=0; i<100; i++) { ctx.fillStyle=`rgba(0,0,0,${Math.random()*0.2})`; ctx.fillRect(Math.random()*64,Math.random()*64,4,4); }
+        return new THREE.CanvasTexture(canvas);
+    }
+    const wallMat = new THREE.MeshStandardMaterial({ map: createColorTexture('#555555'), roughness: 0.8 });
+    const floorMat = new THREE.MeshStandardMaterial({ map: createColorTexture('#222222'), roughness: 0.8 });
+    const paintColors = ['#880000', '#008800', '#000088', '#888800'];
+    const wallGeo = new THREE.BoxGeometry(TILE_SIZE, TILE_SIZE, TILE_SIZE);
+    const floorGeo = new THREE.PlaneGeometry(TILE_SIZE, TILE_SIZE);
+    const torchLights = [];
+
+    for(let x=0; x<WORLD_SIZE; x++) {
+        for(let z=0; z<WORLD_SIZE; z++) {
+            const posX = (x - WORLD_SIZE/2) * TILE_SIZE;
+            const posZ = (z - WORLD_SIZE/2) * TILE_SIZE;
+            if (map[x][z] === 1) {
+                const wall = new THREE.Mesh(wallGeo, wallMat);
+                wall.position.set(posX, TILE_SIZE/2, posZ);
+                wall.castShadow = true; wall.receiveShadow = true; scene.add(wall);
+                if (Math.random() > 0.9) addTorch(posX, posZ); 
+                else if (Math.random() > 0.95) addPainting(posX, posZ);
+            } else {
+                const floor = new THREE.Mesh(floorGeo, floorMat);
+                floor.rotation.x = -Math.PI / 2; floor.position.set(posX, 0, posZ);
+                floor.receiveShadow = true; scene.add(floor);
+                const ceil = new THREE.Mesh(floorGeo, wallMat);
+                ceil.rotation.x = Math.PI / 2; ceil.position.set(posX, TILE_SIZE, posZ); scene.add(ceil);
+            }
+        }
+    }
+
+    function addTorch(x, z) {
+        const light = new THREE.PointLight(0xffaa00, 15, 12);
+        light.position.set(x, TILE_SIZE * 0.6, z); light.castShadow = true; scene.add(light);
+        const bulb = new THREE.Mesh(new THREE.BoxGeometry(0.2,0.5,0.2), new THREE.MeshBasicMaterial({color:0xffaa00}));
+        bulb.position.copy(light.position); scene.add(bulb);
+        light.userData = { offset: Math.random() * 100 }; torchLights.push(light);
+    }
+    function addPainting(x, z) {
+        const canvas = document.createElement('canvas'); canvas.width=128; canvas.height=128;
+        const ctx = canvas.getContext('2d'); ctx.fillStyle='#443322'; ctx.fillRect(0,0,128,128);
+        ctx.fillStyle = paintColors[Math.floor(Math.random() * paintColors.length)]; ctx.fillRect(10,10,108,108); 
+        const paintMat = new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(canvas) });
+        const paintMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.5), paintMat);
+        paintMesh.position.set(x, TILE_SIZE * 0.5, z); paintMesh.rotation.y = Math.random() * Math.PI; scene.add(paintMesh);
+    }
+
+    camera.position.set(0, TILE_SIZE/2, 0);
+
+    // --- 4. GAME LOOP ---
+    const clock = new THREE.Clock();
+
+    function animate() {
+        requestAnimationFrame(animate);
+        const delta = clock.getDelta();
+        const time = clock.getElapsedTime();
+
+        // Flicker
+        torchLights.forEach(light => {
+            light.intensity = 12 + (Math.sin(time * 10 + light.userData.offset) * 2 + Math.random() * 3); 
+        });
+
+        // Rotation (Look)
+        camera.rotation.y -= lookSpeedX;
+        camera.rotation.x -= lookSpeedY; // Note: In a real game, you'd clamp this so you don't flip over
+        lookSpeedX *= 0.8; // Dampening (slow down when you stop dragging)
+        lookSpeedY *= 0.8;
+
+        // Movement (Walk)
+        if (Math.abs(moveSpeed) > 0.1) {
+            const direction = new THREE.Vector3();
+            camera.getWorldDirection(direction);
+            direction.y = 0; direction.normalize();
+
+            const nextX = camera.position.x + (direction.x * moveSpeed * delta);
+            const nextZ = camera.position.z + (direction.z * moveSpeed * delta);
+            
+            const gridX = Math.round((nextX / TILE_SIZE) + WORLD_SIZE/2);
+            const gridZ = Math.round((nextZ / TILE_SIZE) + WORLD_SIZE/2);
+
+            if (map[gridX] && map[gridX][gridZ] === 0) {
+                camera.position.x = nextX;
+                camera.position.z = nextZ;
+            }
+        }
+        
+        renderer.render(scene, camera);
+    }
+
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    animate();
+</script>
+</body>
+</html>
