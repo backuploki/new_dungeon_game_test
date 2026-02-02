@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>The Red Below</title>
+    <title>The Hidden Staircase</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; touch-action: none; }
         
@@ -46,8 +46,8 @@
 
 <div id="ui-layer">
     <div id="instructions">
-        <h2>THE RED BELOW</h2>
-        <p>Find the door. Go down.</p>
+        <h2>THE HIDDEN STAIRS</h2>
+        <p>The Watcher waits ahead.<br>Find the side passage.</p>
     </div>
     <div id="left-zone" class="thumb-zone"><div class="stick-nub" id="left-nub"></div><div class="zone-label">WALK</div></div>
     <div id="right-zone" class="thumb-zone"><div class="stick-nub" id="right-nub"></div><div class="zone-label">LOOK</div></div>
@@ -141,92 +141,114 @@
     const matFloor = new THREE.MeshStandardMaterial({ map: createTexture('#222222', true), roughness: 0.8 });
     const matRedWall = new THREE.MeshStandardMaterial({ map: createTexture('#880000', true), roughness: 0.5 });
     const matRedFloor = new THREE.MeshStandardMaterial({ map: createTexture('#440000', true), roughness: 0.6 });
-    const matDoor = new THREE.MeshStandardMaterial({ map: createTexture('#334455', false), roughness: 0.2, metalness: 0.8 });
+    const matDoor = new THREE.MeshStandardMaterial({ color: 0x8899aa, roughness: 0.2, metalness: 0.9 }); // Metallic Blue-Grey
 
     const TILE_SIZE = 5;
     const lights = [];
 
     // Helper: Build a room/hallway segment
-    function buildHall(x, z, w, d, floorMat, wallMat, h) {
-        // Floor
-        const floor = new THREE.Mesh(new THREE.PlaneGeometry(w, d), floorMat);
-        floor.rotation.x = -Math.PI/2;
-        floor.position.set(x, h, z);
-        floor.receiveShadow = true;
-        scene.add(floor);
-
-        // Ceiling
-        const ceil = new THREE.Mesh(new THREE.PlaneGeometry(w, d), wallMat);
-        ceil.rotation.x = Math.PI/2;
-        ceil.position.set(x, h + TILE_SIZE, z);
-        scene.add(ceil);
-
-        // Walls (Simple block approach)
-        const wallGeoSides = new THREE.BoxGeometry(1, TILE_SIZE, d);
-        const wallGeoEnds = new THREE.BoxGeometry(w, TILE_SIZE, 1);
-
-        // Left/Right Walls
-        const w1 = new THREE.Mesh(wallGeoSides, wallMat); w1.position.set(x - w/2 - 0.5, h + TILE_SIZE/2, z); scene.add(w1);
-        const w2 = new THREE.Mesh(wallGeoSides, wallMat); w2.position.set(x + w/2 + 0.5, h + TILE_SIZE/2, z); scene.add(w2);
+    function buildBlock(x, y, z, w, h, d, mat) {
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+        mesh.position.set(x, y, z);
+        mesh.castShadow = true; mesh.receiveShadow = true;
+        scene.add(mesh);
+        return mesh;
     }
 
-    // --- GENERATE ZONES ---
-    
-    // ZONE 1: Main Hall (Grey)
-    // Z: 5 to -50
-    buildHall(0, -22.5, TILE_SIZE, 55, matFloor, matWall, 0);
-    // Add Torches
+    // --- ZONE 1: MAIN HALL ---
+    // Floor & Ceiling (Z 5 to -55)
+    buildBlock(0, 0, -25, TILE_SIZE, 0.1, 60, matFloor); // Floor
+    buildBlock(0, TILE_SIZE, -25, TILE_SIZE, 0.1, 60, matWall); // Ceiling
+
+    // RIGHT WALL (Solid)
+    buildBlock(2.5 + 0.5, TILE_SIZE/2, -25, 1, TILE_SIZE, 60, matWall);
+
+    // LEFT WALL (With a hole!)
+    // Segment 1: Start to Junction (Z 5 to -22.5)
+    buildBlock(-3, TILE_SIZE/2, -8.75, 1, TILE_SIZE, 27.5, matWall);
+    // Segment 2: Junction GAP (Z -22.5 to -27.5 is EMPTY)
+    // Segment 3: Junction to End (Z -27.5 to -55)
+    buildBlock(-3, TILE_SIZE/2, -41.25, 1, TILE_SIZE, 27.5, matWall);
+
+    // END WALL (Behind Ghost)
+    buildBlock(0, TILE_SIZE/2, -55.5, TILE_SIZE, TILE_SIZE, 1, matWall);
+
+    // Lights
     addLight(0, 3, -10, 0xffaa00, 10);
-    addLight(0, 3, -30, 0xffaa00, 10);
+    addLight(0, 3, -40, 0xffaa00, 5); // Dimmer near ghost
+
+    // --- ZONE 2: SIDE PASSAGE ---
+    // Goes Left from X -2.5 to -35. Z is centered at -25.
+    buildBlock(-20, 0, -25, 40, 0.1, TILE_SIZE, matFloor); // Floor
+    buildBlock(-20, TILE_SIZE, -25, 40, 0.1, TILE_SIZE, matWall); // Ceiling
     
-    // Ghost at end of Main Hall
-    // (We put a wall at Z = -50 for the end)
-    const endWall = new THREE.Mesh(new THREE.BoxGeometry(TILE_SIZE, TILE_SIZE, 1), matWall);
-    endWall.position.set(0, TILE_SIZE/2, -50.5);
-    scene.add(endWall);
+    // Side Walls
+    buildBlock(-20, TILE_SIZE/2, -22.5-0.5, 40, TILE_SIZE, 1, matWall); // North wall of side hall
+    buildBlock(-20, TILE_SIZE/2, -27.5+0.5, 40, TILE_SIZE, 1, matWall); // South wall of side hall
 
-    // ZONE 2: Left Branch (Grey)
-    // Starts at Z=-25, goes Left (-X) to -40
-    // We need to punch a hole in the Main Hall wall at Z=-25, X=-2.5. 
-    // (Simplified: We just place the new hall and let it clip, collision handles the "hole")
-    buildHall(-20, -25, 35, TILE_SIZE, matFloor, matWall, 0);
-    addLight(-20, 3, -25, 0xffaa00, 8);
+    // Light at Junction to show the turn
+    addLight(-5, 3, -25, 0xffaa00, 8);
 
-    // ZONE 3: The Door (At X = -40, Z = -25)
-    const doorMesh = new THREE.Mesh(new THREE.BoxGeometry(1, TILE_SIZE-0.5, TILE_SIZE-0.5), matDoor);
-    doorMesh.position.set(-38, TILE_SIZE/2, -25);
-    scene.add(doorMesh);
+    // --- ZONE 3: THE DOOR ---
+    // Located at X = -38
+    const doorMesh = buildBlock(-38, TILE_SIZE/2, -25, 0.5, TILE_SIZE-0.5, TILE_SIZE-0.5, matDoor);
+    
+    // SPOTLIGHT on the door so you see it
+    const doorSpot = new THREE.SpotLight(0xffffff, 50);
+    doorSpot.position.set(-30, 4, -25);
+    doorSpot.target = doorMesh;
+    doorSpot.angle = 0.5;
+    scene.add(doorSpot);
+    scene.add(doorSpot.target);
 
-    // ZONE 4: Stairs (Going down)
-    // Starts X = -40, goes to -60. Y drops from 0 to -10.
-    // We build individual steps
+    // --- ZONE 4: STAIRS ---
+    // X -40 to -60. Y drops.
     for(let i=0; i<10; i++) {
         const sx = -42 - (i * 2); // Moving left
         const sy = -1 - i;        // Moving down
-        const step = new THREE.Mesh(new THREE.BoxGeometry(2, 1, TILE_SIZE), matRedFloor);
-        step.position.set(sx, sy, -25);
-        scene.add(step);
-        
-        // Roof for stairs
-        const sCeil = new THREE.Mesh(new THREE.BoxGeometry(2, 1, TILE_SIZE), matRedWall);
-        sCeil.position.set(sx, sy + TILE_SIZE + 2, -25); // Higher ceiling for stairs
-        scene.add(sCeil);
+        buildBlock(sx, sy, -25, 2, 1, TILE_SIZE, matRedFloor); // Step
+        buildBlock(sx, sy + TILE_SIZE + 3, -25, 2, 1, TILE_SIZE, matRedWall); // Slanted Ceiling
     }
+    // Light above stairs
+    addLight(-50, 2, -25, 0xff0000, 5);
 
-    // ZONE 5: Red Hall (The Bottom)
-    // Starts X = -62, Y = -10
-    buildHall(-85, -25, 40, TILE_SIZE, matRedFloor, matRedWall, -10);
+    // --- ZONE 5: RED HELL ---
+    // Starts X -62
+    buildBlock(-85, -10, -25, 40, 0.1, TILE_SIZE, matRedFloor); // Floor
+    buildBlock(-85, -10 + TILE_SIZE, -25, 40, 0.1, TILE_SIZE, matRedWall); // Ceiling
     
+    // Walls
+    buildBlock(-85, -10 + TILE_SIZE/2, -28, 40, TILE_SIZE, 1, matRedWall);
+    buildBlock(-85, -10 + TILE_SIZE/2, -22, 40, TILE_SIZE, 1, matRedWall);
+
     // Purple Lights
     addLight(-70, -7, -25, 0xff00ff, 15);
     addLight(-95, -7, -25, 0xff00ff, 15);
 
+
+    // --- THE WATCHER (GHOST) ---
+    const ghostGroup = new THREE.Group();
+    const ghostGeo = new THREE.CapsuleGeometry(0.7, 2, 4, 8);
+    const ghostMat = new THREE.MeshBasicMaterial({ color: 0x000000 }); 
+    const ghostBody = new THREE.Mesh(ghostGeo, ghostMat);
+    ghostBody.position.y = 1.5;
+    ghostGroup.add(ghostBody);
+
+    const eyeGeo = new THREE.SphereGeometry(0.15, 16, 16);
+    const eyeMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+    const eyeL = new THREE.Mesh(eyeGeo, eyeMat); eyeL.position.set(-0.25, 2.2, 0.6); ghostGroup.add(eyeL);
+    const eyeR = new THREE.Mesh(eyeGeo, eyeMat); eyeR.position.set(0.25, 2.2, 0.6); ghostGroup.add(eyeR);
+    
+    // Ghost Position (End of Main Hall)
+    ghostGroup.position.set(0, 0.5, -50);
+    scene.add(ghostGroup);
+
+
     function addLight(x, y, z, col, intens) {
-        const light = new THREE.PointLight(col, intens, 20);
+        const light = new THREE.PointLight(col, intens, 15);
         light.position.set(x, y, z);
         light.castShadow = true;
         scene.add(light);
-        // Bulb
         const sphere = new THREE.Mesh(new THREE.SphereGeometry(0.1), new THREE.MeshBasicMaterial({color:col}));
         sphere.position.copy(light.position);
         scene.add(sphere);
@@ -237,13 +259,12 @@
     // --- 4. LOGIC & PHYSICS ---
     camera.position.set(0, 2, 0);
 
-    // Walkable Areas (Simple Bounding Boxes)
-    // [minX, maxX, minZ, maxZ, floorHeight]
+    // Walkable Zones [minX, maxX, minZ, maxZ, floorHeight]
     const zones = [
-        [-2.5, 2.5, -50, 5, 0],       // Main Hall
-        [-40, 2.5, -27.5, -22.5, 0],  // Side Hall (Connection)
+        [-2.5, 2.5, -53, 5, 0],       // Main Hall
+        [-40, 2.5, -27.5, -22.5, 0],  // Side Hall
         [-62, -40, -27.5, -22.5, 'stair'], // Stairs
-        [-105, -62, -27.5, -22.5, -10] // Red Hall
+        [-105, -62, -27.5, -22.5, -10] // Red Room
     ];
 
     let doorOpen = false;
@@ -257,14 +278,18 @@
         const time = clock.getElapsedTime();
 
         // Flicker lights
-        lights.forEach(l => l.intensity = 8 + Math.sin(time*5 + l.userData.offset)*2 + Math.random());
+        lights.forEach(l => l.intensity = l.intensity * 0.95 + (Math.random() * l.intensity * 0.1)); // Subtle flicker
+
+        // Ghost Animation
+        ghostGroup.position.y = 0.5 + Math.sin(time * 2) * 0.2; 
+        ghostGroup.lookAt(camera.position.x, 1.5, camera.position.z);
 
         // DOOR LOGIC
         const distToDoor = Math.abs(camera.position.x - (-38)) + Math.abs(camera.position.z - (-25));
-        if (distToDoor < 8) doorOpen = true;
+        if (distToDoor < 10) doorOpen = true; // Increased range
 
         if (doorOpen && doorMesh.position.y < 8) {
-            doorMesh.position.y += delta * 2; // Slide up
+            doorMesh.position.y += delta * 4; // Open faster
         }
 
         // LOOK
@@ -279,27 +304,21 @@
             const right = new THREE.Vector3(); right.crossVectors(fwd, camera.up).normalize();
 
             const moveVec = new THREE.Vector3().addScaledVector(fwd, -input.moveY*WALK_SPEED*delta).addScaledVector(right, input.moveX*WALK_SPEED*delta);
-            
             const nextX = camera.position.x + moveVec.x;
             const nextZ = camera.position.z + moveVec.z;
 
-            // COLLISION & HEIGHT CHECK
+            // COLLISION
             let valid = false;
             let targetY = camera.position.y;
 
             for(let z of zones) {
                 if (nextX >= z[0] && nextX <= z[1] && nextZ >= z[2] && nextZ <= z[3]) {
-                    // Check Door Lock
-                    if (z[4] === 0 && nextX < -36 && !doorOpen) {
-                        continue; // Blocked by door
-                    }
+                    // Door Check: If door closed and trying to pass X = -38
+                    if (z[4] === 0 && nextX < -37 && !doorOpen) continue; 
 
                     valid = true;
-                    // Handle Height
                     if (z[4] === 'stair') {
-                        // Interpolate height based on X progress in stair zone
-                        // Range -40 (Top) to -62 (Bottom)
-                        const pct = (nextX - (-40)) / (-62 - (-40)); // 0.0 to 1.0
+                        const pct = (nextX - (-40)) / (-62 - (-40)); 
                         targetY = 2 + (pct * -10); 
                     } else {
                         targetY = 2 + z[4];
@@ -311,11 +330,9 @@
             if (valid) {
                 camera.position.x = nextX;
                 camera.position.z = nextZ;
-                // Smoothly adjust height
-                camera.position.y += (targetY - camera.position.y) * 0.1;
+                camera.position.y += (targetY - camera.position.y) * 0.15;
             }
         }
-        
         renderer.render(scene, camera);
     }
 
