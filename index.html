@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Spooky Hallway</title>
+    <title>The Red Below</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; touch-action: none; }
         
@@ -23,7 +23,7 @@
         }
 
         .thumb-zone {
-            position: absolute; bottom: 40px; width: 140px; height: 140px; /* Bigger zones */
+            position: absolute; bottom: 40px; width: 140px; height: 140px;
             border: 2px solid rgba(255,255,255,0.1);
             background: rgba(255,255,255,0.05);
             border-radius: 50%;
@@ -39,29 +39,18 @@
 
         #left-zone { left: 20px; }
         #right-zone { right: 20px; }
-        
-        .zone-label {
-            position: absolute; bottom: -30px; width: 100%; text-align: center; 
-            color: #aaa; font-size: 12px; font-weight: bold; letter-spacing: 1px;
-        }
+        .zone-label { position: absolute; bottom: -30px; width: 100%; text-align: center; color: #aaa; font-size: 12px; font-weight: bold; }
     </style>
 </head>
 <body>
 
 <div id="ui-layer">
     <div id="instructions">
-        <h2>THE WATCHER</h2>
-        <p>Tap to Start</p>
+        <h2>THE RED BELOW</h2>
+        <p>Find the door. Go down.</p>
     </div>
-    
-    <div id="left-zone" class="thumb-zone">
-        <div class="stick-nub" id="left-nub"></div>
-        <div class="zone-label">WALK</div>
-    </div>
-    <div id="right-zone" class="thumb-zone">
-        <div class="stick-nub" id="right-nub"></div>
-        <div class="zone-label">LOOK</div>
-    </div>
+    <div id="left-zone" class="thumb-zone"><div class="stick-nub" id="left-nub"></div><div class="zone-label">WALK</div></div>
+    <div id="right-zone" class="thumb-zone"><div class="stick-nub" id="right-nub"></div><div class="zone-label">LOOK</div></div>
 </div>
 
 <script type="importmap">
@@ -77,10 +66,9 @@
 
     // --- 1. SETUP ---
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x050505, 0.08); // Darker fog for spookiness
+    scene.fog = new THREE.FogExp2(0x050505, 0.06);
 
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-    // Important: Order 'YXZ' prevents camera tilting sideways when looking up/down
     camera.rotation.order = 'YXZ'; 
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -88,258 +76,132 @@
     renderer.shadowMap.enabled = true; 
     document.body.appendChild(renderer.domElement);
 
-    // --- 2. INPUT VARIABLES ---
+    // --- 2. INPUT & CONTROLS ---
     const input = { moveX: 0, moveY: 0, lookX: 0, lookY: 0 };
-    
-    // SENSITIVITY SETTINGS (Adjust these if it's still too fast/slow)
     const LOOK_SENSITIVITY = 0.004; 
-    const WALK_SPEED = 6.0;
+    const WALK_SPEED = 7.0;
 
     const leftNub = document.getElementById('left-nub');
     const rightNub = document.getElementById('right-nub');
     const instructions = document.getElementById('instructions');
     const touches = {}; 
-    const maxRange = 60; 
-
-    document.addEventListener('touchstart', handleTouch);
-    document.addEventListener('touchmove', handleTouch);
+    
+    document.addEventListener('touchstart', (e) => { e.preventDefault(); instructions.style.display = 'none'; handleTouch(e); });
+    document.addEventListener('touchmove', (e) => { e.preventDefault(); handleTouch(e); });
     document.addEventListener('touchend', endTouch);
     
     const halfWidth = window.innerWidth / 2;
 
     function handleTouch(e) {
-        e.preventDefault(); 
-        instructions.style.display = 'none'; 
-
         for (let i = 0; i < e.touches.length; i++) {
             const t = e.touches[i];
             if (!touches[t.identifier]) touches[t.identifier] = { startX: t.clientX, startY: t.clientY };
-
             const startX = touches[t.identifier].startX;
-            const startY = touches[t.identifier].startY;
             const deltaX = t.clientX - startX;
-            const deltaY = t.clientY - startY;
+            const deltaY = t.clientY - touches[t.identifier].startY;
 
-            if (startX < halfWidth) {
-                // Movement
+            if (startX < halfWidth) { // Move
                 input.moveX = Math.max(-1, Math.min(1, deltaX / 60)); 
                 input.moveY = Math.max(-1, Math.min(1, deltaY / 60));
-                
-                const visX = Math.max(-maxRange, Math.min(maxRange, deltaX));
-                const visY = Math.max(-maxRange, Math.min(maxRange, deltaY));
-                leftNub.style.transform = `translate(calc(-50% + ${visX}px), calc(-50% + ${visY}px))`;
-            } else {
-                // Look (Direct delta tracking)
+                leftNub.style.transform = `translate(calc(-50% + ${Math.max(-60,Math.min(60,deltaX))}px), calc(-50% + ${Math.max(-60,Math.min(60,deltaY))}px))`;
+            } else { // Look
                 const prevX = touches[t.identifier].lastX || t.clientX;
                 const prevY = touches[t.identifier].lastY || t.clientY;
-                
-                // Calculate difference from LAST frame, not start
                 input.lookX = (t.clientX - prevX) * LOOK_SENSITIVITY; 
                 input.lookY = (t.clientY - prevY) * LOOK_SENSITIVITY;
-
                 touches[t.identifier].lastX = t.clientX;
                 touches[t.identifier].lastY = t.clientY;
-
-                // Visual Feedback
-                const visX = Math.max(-20, Math.min(20, deltaX));
-                const visY = Math.max(-20, Math.min(20, deltaY));
-                rightNub.style.transform = `translate(calc(-50% + ${visX}px), calc(-50% + ${visY}px))`;
+                rightNub.style.transform = `translate(calc(-50% + ${Math.max(-20,Math.min(20,deltaX))}px), calc(-50% + ${Math.max(-20,Math.min(20,deltaY))}px))`;
             }
         }
     }
-
     function endTouch(e) {
         let leftActive = false;
         const activeIds = Array.from(e.touches).map(t => t.identifier);
-        
-        // Reset inputs if finger lifted
         for (let id in touches) {
             if (!activeIds.includes(parseInt(id))) {
-                if (touches[id].startX < halfWidth) {
-                    input.moveX = 0; input.moveY = 0;
-                    leftNub.style.transform = `translate(-50%, -50%)`;
-                } else {
-                    input.lookX = 0; input.lookY = 0;
-                    rightNub.style.transform = `translate(-50%, -50%)`;
-                }
+                if (touches[id].startX < halfWidth) { input.moveX = 0; input.moveY = 0; leftNub.style.transform = `translate(-50%, -50%)`; }
                 delete touches[id];
             }
         }
     }
 
-    // --- 3. LEVEL GENERATION ---
-    const TILE_SIZE = 5;
-    const HALL_LENGTH = 30;
-    
-    // Textures
+    // --- 3. LEVEL CONSTRUCTION ---
     const textureLoader = new THREE.TextureLoader();
     function createTexture(color, noise) {
-        const canvas = document.createElement('canvas'); canvas.width=128; canvas.height=128;
+        const canvas = document.createElement('canvas'); canvas.width=64; canvas.height=64;
         const ctx = canvas.getContext('2d'); 
-        ctx.fillStyle = color; ctx.fillRect(0,0,128,128);
-        if(noise) {
-            for(let i=0; i<400; i++) { 
-                ctx.fillStyle=`rgba(0,0,0,${Math.random()*0.1})`; 
-                ctx.fillRect(Math.random()*128,Math.random()*128,2,2); 
-            }
-        }
-        ctx.strokeStyle = "rgba(0,0,0,0.3)"; ctx.lineWidth = 4; ctx.strokeRect(0,0,128,128);
+        ctx.fillStyle = color; ctx.fillRect(0,0,64,64);
+        if(noise) { for(let i=0;i<200;i++){ ctx.fillStyle=`rgba(0,0,0,${Math.random()*0.2})`; ctx.fillRect(Math.random()*64,Math.random()*64,2,2); } }
         return new THREE.CanvasTexture(canvas);
     }
 
-    const wallMat = new THREE.MeshStandardMaterial({ map: createTexture('#555555', true), roughness: 0.6 });
-    const floorMat = new THREE.MeshStandardMaterial({ map: createTexture('#222222', true), roughness: 0.8 });
-    const ceilingMat = new THREE.MeshStandardMaterial({ map: createTexture('#111111', true), roughness: 0.9 });
-    const boxGeo = new THREE.BoxGeometry(TILE_SIZE, TILE_SIZE, TILE_SIZE);
-    const planeGeo = new THREE.PlaneGeometry(TILE_SIZE, TILE_SIZE);
+    // Materials
+    const matWall = new THREE.MeshStandardMaterial({ map: createTexture('#555555', true), roughness: 0.7 });
+    const matFloor = new THREE.MeshStandardMaterial({ map: createTexture('#222222', true), roughness: 0.8 });
+    const matRedWall = new THREE.MeshStandardMaterial({ map: createTexture('#880000', true), roughness: 0.5 });
+    const matRedFloor = new THREE.MeshStandardMaterial({ map: createTexture('#440000', true), roughness: 0.6 });
+    const matDoor = new THREE.MeshStandardMaterial({ map: createTexture('#334455', false), roughness: 0.2, metalness: 0.8 });
 
-    const torchLights = [];
+    const TILE_SIZE = 5;
+    const lights = [];
 
-    // Build Hallway
-    for (let z = 0; z < HALL_LENGTH; z++) {
-        const zPos = -z * TILE_SIZE;
+    // Helper: Build a room/hallway segment
+    function buildHall(x, z, w, d, floorMat, wallMat, h) {
+        // Floor
+        const floor = new THREE.Mesh(new THREE.PlaneGeometry(w, d), floorMat);
+        floor.rotation.x = -Math.PI/2;
+        floor.position.set(x, h, z);
+        floor.receiveShadow = true;
+        scene.add(floor);
 
-        // Floor/Ceiling
-        const floor = new THREE.Mesh(planeGeo, floorMat);
-        floor.rotation.x = -Math.PI/2; floor.position.set(0, 0, zPos); floor.receiveShadow = true; scene.add(floor);
-        
-        const ceil = new THREE.Mesh(planeGeo, ceilingMat);
-        ceil.rotation.x = Math.PI/2; ceil.position.set(0, TILE_SIZE, zPos); scene.add(ceil);
+        // Ceiling
+        const ceil = new THREE.Mesh(new THREE.PlaneGeometry(w, d), wallMat);
+        ceil.rotation.x = Math.PI/2;
+        ceil.position.set(x, h + TILE_SIZE, z);
+        scene.add(ceil);
 
-        // Walls
-        const wallL = new THREE.Mesh(boxGeo, wallMat);
-        wallL.position.set(-TILE_SIZE, TILE_SIZE/2, zPos);
-        wallL.castShadow = true; wallL.receiveShadow = true; scene.add(wallL);
+        // Walls (Simple block approach)
+        const wallGeoSides = new THREE.BoxGeometry(1, TILE_SIZE, d);
+        const wallGeoEnds = new THREE.BoxGeometry(w, TILE_SIZE, 1);
 
-        const wallR = new THREE.Mesh(boxGeo, wallMat);
-        wallR.position.set(TILE_SIZE, TILE_SIZE/2, zPos);
-        wallR.castShadow = true; wallR.receiveShadow = true; scene.add(wallR);
-
-        // Torches (Less frequent now, for darkness)
-        if (z % 4 === 0 && z < HALL_LENGTH - 5) {
-            addTorch(0, TILE_SIZE - 1.5, zPos);
-        }
+        // Left/Right Walls
+        const w1 = new THREE.Mesh(wallGeoSides, wallMat); w1.position.set(x - w/2 - 0.5, h + TILE_SIZE/2, z); scene.add(w1);
+        const w2 = new THREE.Mesh(wallGeoSides, wallMat); w2.position.set(x + w/2 + 0.5, h + TILE_SIZE/2, z); scene.add(w2);
     }
 
-    // --- SPOOKY ENDING ---
-    const ghostGroup = new THREE.Group();
+    // --- GENERATE ZONES ---
     
-    // Ghost Body (Dark Shadow)
-    const ghostGeo = new THREE.CapsuleGeometry(0.7, 2, 4, 8);
-    const ghostMat = new THREE.MeshBasicMaterial({ color: 0x000000 }); // Pure black
-    const ghostBody = new THREE.Mesh(ghostGeo, ghostMat);
-    ghostBody.position.y = 1.5;
-    ghostGroup.add(ghostBody);
-
-    // Glowing Eyes
-    const eyeGeo = new THREE.SphereGeometry(0.15, 16, 16);
-    const eyeMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+    // ZONE 1: Main Hall (Grey)
+    // Z: 5 to -50
+    buildHall(0, -22.5, TILE_SIZE, 55, matFloor, matWall, 0);
+    // Add Torches
+    addLight(0, 3, -10, 0xffaa00, 10);
+    addLight(0, 3, -30, 0xffaa00, 10);
     
-    const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
-    eyeL.position.set(-0.25, 2.2, 0.6); // Slightly forward
-    ghostGroup.add(eyeL);
+    // Ghost at end of Main Hall
+    // (We put a wall at Z = -50 for the end)
+    const endWall = new THREE.Mesh(new THREE.BoxGeometry(TILE_SIZE, TILE_SIZE, 1), matWall);
+    endWall.position.set(0, TILE_SIZE/2, -50.5);
+    scene.add(endWall);
 
-    const eyeR = new THREE.Mesh(eyeGeo, eyeMat);
-    eyeR.position.set(0.25, 2.2, 0.6);
-    ghostGroup.add(eyeR);
+    // ZONE 2: Left Branch (Grey)
+    // Starts at Z=-25, goes Left (-X) to -40
+    // We need to punch a hole in the Main Hall wall at Z=-25, X=-2.5. 
+    // (Simplified: We just place the new hall and let it clip, collision handles the "hole")
+    buildHall(-20, -25, 35, TILE_SIZE, matFloor, matWall, 0);
+    addLight(-20, 3, -25, 0xffaa00, 8);
 
-    // Eye Glow
-    const eyeLight = new THREE.PointLight(0xff0000, 5, 5);
-    eyeLight.position.set(0, 2.2, 1.0);
-    ghostGroup.add(eyeLight);
+    // ZONE 3: The Door (At X = -40, Z = -25)
+    const doorMesh = new THREE.Mesh(new THREE.BoxGeometry(1, TILE_SIZE-0.5, TILE_SIZE-0.5), matDoor);
+    doorMesh.position.set(-38, TILE_SIZE/2, -25);
+    scene.add(doorMesh);
 
-    ghostGroup.position.set(0, 0.5, -(HALL_LENGTH-2)*TILE_SIZE);
-    scene.add(ghostGroup);
-
-
-    function addTorch(x, y, z) {
-        const light = new THREE.PointLight(0xffaa00, 8, 12);
-        light.position.set(x, y, z);
-        light.castShadow = true;
-        scene.add(light);
-        
-        const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.1), new THREE.MeshBasicMaterial({color:0xffaa00}));
-        bulb.position.copy(light.position);
-        scene.add(bulb);
-        light.userData = { offset: Math.random() * 100 };
-        torchLights.push(light);
-    }
-
-    camera.position.set(0, 2, 0); 
-
-    // --- 4. GAME LOOP ---
-    const clock = new THREE.Clock();
-    
-    // Collision Bounds
-    const BOUNDS_X = 2.0; // Distance from center you can walk
-    const BOUNDS_START_Z = 2.0;
-    const BOUNDS_END_Z = -(HALL_LENGTH-1) * TILE_SIZE;
-
-    function animate() {
-        requestAnimationFrame(animate);
-        const delta = clock.getDelta();
-        const time = clock.getElapsedTime();
-
-        // 1. Flicker Lights
-        torchLights.forEach(light => {
-            light.intensity = 6 + Math.sin(time * 8 + light.userData.offset) * 2 + Math.random(); 
-        });
-
-        // 2. Animate Ghost (Hover and Look)
-        ghostGroup.position.y = 0.5 + Math.sin(time * 2) * 0.2; // Hover
-        ghostGroup.lookAt(camera.position.x, 1.5, camera.position.z); // Always watch player
-
-        // 3. APPLY LOOK
-        // Note: input.lookX is now "how much to turn this frame"
-        camera.rotation.y -= input.lookX;
-        camera.rotation.x -= input.lookY;
-
-        // Clamp Look Up/Down (Max 80 degrees)
-        const maxPolar = 1.4; // Radians (~80 degrees)
-        camera.rotation.x = Math.max(-maxPolar, Math.min(maxPolar, camera.rotation.x));
-
-        // Reset look delta (because it's based on swipe distance per frame)
-        input.lookX = 0; 
-        input.lookY = 0;
-
-        // 4. MOVEMENT & COLLISION
-        if (Math.abs(input.moveY) > 0.05 || Math.abs(input.moveX) > 0.05) {
-            const forward = new THREE.Vector3();
-            const right = new THREE.Vector3();
-
-            camera.getWorldDirection(forward);
-            forward.y = 0; forward.normalize();
-            right.crossVectors(forward, camera.up).normalize();
-
-            const moveVec = new THREE.Vector3();
-            moveVec.addScaledVector(forward, -input.moveY * WALK_SPEED * delta);
-            moveVec.addScaledVector(right, input.moveX * WALK_SPEED * delta);
-
-            // Predict Next Position
-            const nextX = camera.position.x + moveVec.x;
-            const nextZ = camera.position.z + moveVec.z;
-
-            // Simple Collision Check
-            // Check X (Walls)
-            if (nextX > -BOUNDS_X && nextX < BOUNDS_X) {
-                camera.position.x = nextX;
-            }
-            // Check Z (Length of hall)
-            if (nextZ < BOUNDS_START_Z && nextZ > BOUNDS_END_Z) {
-                camera.position.z = nextZ;
-            }
-        }
-        
-        renderer.render(scene, camera);
-    }
-
-    window.addEventListener('resize', () => {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-    });
-
-    animate();
-</script>
-</body>
-</html>
+    // ZONE 4: Stairs (Going down)
+    // Starts X = -40, goes to -60. Y drops from 0 to -10.
+    // We build individual steps
+    for(let i=0; i<10; i++) {
+        const sx = -42 - (i * 2); // Moving left
+        const sy = -1 - i;        // Moving down
+        const step = new THREE.Mesh(new THREE.BoxGeometry(2, 1, TILE_SIZE), matRedFloor);
+        step
