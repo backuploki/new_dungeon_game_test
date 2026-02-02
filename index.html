@@ -204,4 +204,128 @@
         const sx = -42 - (i * 2); // Moving left
         const sy = -1 - i;        // Moving down
         const step = new THREE.Mesh(new THREE.BoxGeometry(2, 1, TILE_SIZE), matRedFloor);
-        step
+        step.position.set(sx, sy, -25);
+        scene.add(step);
+        
+        // Roof for stairs
+        const sCeil = new THREE.Mesh(new THREE.BoxGeometry(2, 1, TILE_SIZE), matRedWall);
+        sCeil.position.set(sx, sy + TILE_SIZE + 2, -25); // Higher ceiling for stairs
+        scene.add(sCeil);
+    }
+
+    // ZONE 5: Red Hall (The Bottom)
+    // Starts X = -62, Y = -10
+    buildHall(-85, -25, 40, TILE_SIZE, matRedFloor, matRedWall, -10);
+    
+    // Purple Lights
+    addLight(-70, -7, -25, 0xff00ff, 15);
+    addLight(-95, -7, -25, 0xff00ff, 15);
+
+    function addLight(x, y, z, col, intens) {
+        const light = new THREE.PointLight(col, intens, 20);
+        light.position.set(x, y, z);
+        light.castShadow = true;
+        scene.add(light);
+        // Bulb
+        const sphere = new THREE.Mesh(new THREE.SphereGeometry(0.1), new THREE.MeshBasicMaterial({color:col}));
+        sphere.position.copy(light.position);
+        scene.add(sphere);
+        light.userData = { offset: Math.random()*100 };
+        lights.push(light);
+    }
+
+    // --- 4. LOGIC & PHYSICS ---
+    camera.position.set(0, 2, 0);
+
+    // Walkable Areas (Simple Bounding Boxes)
+    // [minX, maxX, minZ, maxZ, floorHeight]
+    const zones = [
+        [-2.5, 2.5, -50, 5, 0],       // Main Hall
+        [-40, 2.5, -27.5, -22.5, 0],  // Side Hall (Connection)
+        [-62, -40, -27.5, -22.5, 'stair'], // Stairs
+        [-105, -62, -27.5, -22.5, -10] // Red Hall
+    ];
+
+    let doorOpen = false;
+
+    // GAME LOOP
+    const clock = new THREE.Clock();
+    
+    function animate() {
+        requestAnimationFrame(animate);
+        const delta = clock.getDelta();
+        const time = clock.getElapsedTime();
+
+        // Flicker lights
+        lights.forEach(l => l.intensity = 8 + Math.sin(time*5 + l.userData.offset)*2 + Math.random());
+
+        // DOOR LOGIC
+        const distToDoor = Math.abs(camera.position.x - (-38)) + Math.abs(camera.position.z - (-25));
+        if (distToDoor < 8) doorOpen = true;
+
+        if (doorOpen && doorMesh.position.y < 8) {
+            doorMesh.position.y += delta * 2; // Slide up
+        }
+
+        // LOOK
+        camera.rotation.y -= input.lookX;
+        camera.rotation.x -= input.lookY;
+        camera.rotation.x = Math.max(-1.5, Math.min(1.5, camera.rotation.x));
+        input.lookX = 0; input.lookY = 0;
+
+        // MOVE
+        if (Math.abs(input.moveY) > 0.05 || Math.abs(input.moveX) > 0.05) {
+            const fwd = new THREE.Vector3(); camera.getWorldDirection(fwd); fwd.y=0; fwd.normalize();
+            const right = new THREE.Vector3(); right.crossVectors(fwd, camera.up).normalize();
+
+            const moveVec = new THREE.Vector3().addScaledVector(fwd, -input.moveY*WALK_SPEED*delta).addScaledVector(right, input.moveX*WALK_SPEED*delta);
+            
+            const nextX = camera.position.x + moveVec.x;
+            const nextZ = camera.position.z + moveVec.z;
+
+            // COLLISION & HEIGHT CHECK
+            let valid = false;
+            let targetY = camera.position.y;
+
+            for(let z of zones) {
+                if (nextX >= z[0] && nextX <= z[1] && nextZ >= z[2] && nextZ <= z[3]) {
+                    // Check Door Lock
+                    if (z[4] === 0 && nextX < -36 && !doorOpen) {
+                        continue; // Blocked by door
+                    }
+
+                    valid = true;
+                    // Handle Height
+                    if (z[4] === 'stair') {
+                        // Interpolate height based on X progress in stair zone
+                        // Range -40 (Top) to -62 (Bottom)
+                        const pct = (nextX - (-40)) / (-62 - (-40)); // 0.0 to 1.0
+                        targetY = 2 + (pct * -10); 
+                    } else {
+                        targetY = 2 + z[4];
+                    }
+                    break;
+                }
+            }
+
+            if (valid) {
+                camera.position.x = nextX;
+                camera.position.z = nextZ;
+                // Smoothly adjust height
+                camera.position.y += (targetY - camera.position.y) * 0.1;
+            }
+        }
+        
+        renderer.render(scene, camera);
+    }
+
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    animate();
+</script>
+</body>
+</html>
